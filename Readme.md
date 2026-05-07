@@ -1,4 +1,4 @@
-# Zoho CRM Lead Distribution Orchestrator
+# Zoho CRM Lead Distribution
 
 Advanced Deluge automation for intelligent Lead assignment and qualification in Zoho CRM.
 
@@ -23,7 +23,7 @@ Zoho CRM Workflow:
 
 ## File
 
-- `lead_distribution_orchestrator.deluge`
+- `lead_distribution.deluge`
 
 ## Use Case
 
