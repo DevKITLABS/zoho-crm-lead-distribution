@@ -1,0 +1,354 @@
+leadId = input.leadId.toLong();
+
+leadData = zoho.crm.getRecordById("Leads",leadId);
+
+if(leadData.isEmpty())
+{
+	info "Lead not found";
+	return;
+}
+
+firstName = ifnull(leadData.get("First_Name"),"");
+lastName = ifnull(leadData.get("Last_Name"),"");
+email = ifnull(leadData.get("Email"),"");
+phone = ifnull(leadData.get("Phone"),"");
+company = ifnull(leadData.get("Company"),"");
+leadSource = ifnull(leadData.get("Lead_Source"),"");
+industry = ifnull(leadData.get("Industry"),"");
+country = ifnull(leadData.get("Country"),"");
+annualRevenue = ifnull(leadData.get("Annual_Revenue"),0);
+employeeCount = ifnull(leadData.get("No_of_Employees"),0);
+status = ifnull(leadData.get("Lead_Status"),"");
+website = ifnull(leadData.get("Website"),"");
+createdTime = leadData.get("Created_Time");
+
+leadScore = 0;
+spamScore = 0;
+assignmentGroup = "";
+validationErrors = List();
+tagsList = List();
+
+// EMAIL VALIDATION
+
+freeDomains = List();
+freeDomains.add("gmail.com");
+freeDomains.add("yahoo.com");
+freeDomains.add("hotmail.com");
+
+if(email != "")
+{
+	emailParts = email.toString().toLowerCase().split("@");
+
+	if(emailParts.size() > 1)
+	{
+		domain = emailParts.get(1);
+
+		if(freeDomains.contains(domain))
+		{
+			leadScore = leadScore + 5;
+		}
+		else
+		{
+			leadScore = leadScore + 20;
+		}
+	}
+}
+else
+{
+	validationErrors.add("Missing email");
+	spamScore = spamScore + 20;
+}
+
+// PHONE VALIDATION
+
+if(phone == "")
+{
+	spamScore = spamScore + 15;
+}
+else
+{
+	if(phone.length() < 8)
+	{
+		spamScore = spamScore + 25;
+	}
+	else
+	{
+		leadScore = leadScore + 10;
+	}
+}
+
+// COMPANY VALIDATION
+
+if(company != "")
+{
+	leadScore = leadScore + 15;
+}
+else
+{
+	spamScore = spamScore + 10;
+}
+
+// INDUSTRY SCORING
+
+priorityIndustries = List();
+priorityIndustries.add("Healthcare");
+priorityIndustries.add("Finance");
+priorityIndustries.add("Technology");
+
+if(priorityIndustries.contains(industry))
+{
+	leadScore = leadScore + 25;
+	tagsList.add("Priority Industry");
+}
+
+// REVENUE BASED SCORING
+
+if(annualRevenue >= 1000000)
+{
+	leadScore = leadScore + 30;
+}
+
+if(employeeCount >= 100)
+{
+	leadScore = leadScore + 15;
+}
+
+// SPAM DETECTION
+
+spamKeywords = List();
+spamKeywords.add("test");
+spamKeywords.add("demo");
+spamKeywords.add("asdf");
+spamKeywords.add("trial");
+
+fullText = (firstName + " " + lastName + " " + company).toLowerCase();
+
+for each keyword in spamKeywords
+{
+	if(fullText.contains(keyword))
+	{
+		spamScore = spamScore + 20;
+	}
+}
+
+if(website.contains("https://"))
+{
+	leadScore = leadScore + 5;
+}
+
+// DUPLICATE LEAD CHECK
+
+duplicateLeads = zoho.crm.searchRecords("Leads","(Email:equals:" + email + ")");
+
+duplicateCount = 0;
+
+for each dupLead in duplicateLeads
+{
+	dupId = dupLead.get("id");
+
+	if(dupId != leadId)
+	{
+		duplicateCount = duplicateCount + 1;
+	}
+}
+
+if(duplicateCount > 0)
+{
+	spamScore = spamScore + 20;
+	tagsList.add("Duplicate Lead");
+}
+
+// COUNTRY BASED ROUTING
+
+if(country == "United States")
+{
+	assignmentGroup = "US Sales";
+}
+
+else if(country == "Canada")
+{
+	assignmentGroup = "Canada Sales";
+}
+
+else if(country == "Australia")
+{
+	assignmentGroup = "APAC Sales";
+}
+
+else
+{
+	assignmentGroup = "International Sales";
+}
+
+// LEAD SOURCE PRIORITY
+
+if(leadSource == "Google Ads")
+{
+	leadScore = leadScore + 15;
+}
+
+if(leadSource == "Website")
+{
+	leadScore = leadScore + 10;
+}
+
+if(leadSource == "Facebook Ads")
+{
+	leadScore = leadScore + 5;
+}
+
+if(leadSource == "Cold Calling")
+{
+	spamScore = spamScore + 10;
+}
+
+// FINAL LEAD QUALITY
+
+leadQuality = "Cold";
+
+if(leadScore >= 40)
+{
+	leadQuality = "Warm";
+}
+
+if(leadScore >= 70)
+{
+	leadQuality = "Hot";
+}
+
+// ROUND ROBIN USER ASSIGNMENT
+
+salesUsers = List();
+
+if(assignmentGroup == "US Sales")
+{
+	salesUsers.add("7628374000001201001");
+	salesUsers.add("7628374000001201002");
+	salesUsers.add("7628374000001201003");
+}
+
+if(assignmentGroup == "Canada Sales")
+{
+	salesUsers.add("7628374000001201010");
+	salesUsers.add("7628374000001201011");
+}
+
+if(assignmentGroup == "APAC Sales")
+{
+	salesUsers.add("7628374000001201020");
+	salesUsers.add("7628374000001201021");
+}
+
+if(assignmentGroup == "International Sales")
+{
+	salesUsers.add("7628374000001201030");
+}
+
+assignedUser = "";
+
+if(salesUsers.size() > 0)
+{
+	index = (leadId % salesUsers.size()).toNumber();
+	assignedUser = salesUsers.get(index);
+}
+
+// TASK CREATION
+
+taskMap = Map();
+taskMap.put("Subject","Initial Lead Qualification Call");
+taskMap.put("Due_Date",zoho.currentdate.addDay(1));
+taskMap.put("What_Id",leadId);
+taskMap.put("Priority","High");
+
+if(assignedUser != "")
+{
+	taskMap.put("Owner",assignedUser);
+}
+
+zoho.crm.createRecord("Tasks",taskMap);
+
+// LEAD UPDATE
+
+leadUpdate = Map();
+
+leadUpdate.put("Lead_Score",leadScore);
+leadUpdate.put("Spam_Score",spamScore);
+leadUpdate.put("Lead_Quality",leadQuality);
+leadUpdate.put("Assignment_Group",assignmentGroup);
+leadUpdate.put("Duplicate_Count",duplicateCount);
+
+if(assignedUser != "")
+{
+	leadUpdate.put("Owner",assignedUser);
+}
+
+if(tagsList.size() > 0)
+{
+	leadUpdate.put("Tag",tagsList);
+}
+
+
+// LEAD STATUS AUTOMATION
+
+if(spamScore >= 50)
+{
+	leadUpdate.put("Lead_Status","Junk Lead");
+}
+
+else if(leadQuality == "Hot")
+{
+	leadUpdate.put("Lead_Status","Qualified");
+}
+
+else
+{
+	leadUpdate.put("Lead_Status","New");
+}
+
+zoho.crm.updateRecord("Leads",leadId,leadUpdate);
+
+// MANAGER ESCALATION
+
+if(leadQuality == "Hot")
+{
+	sendmail
+	[
+		from : zoho.adminuserid
+		to : "salesmanager@company.com"
+		subject : "Hot Lead Assigned - " + company
+		message : "A high quality lead has been assigned.\n\nLead Score: " + leadScore
+	]
+}
+
+
+// SLA ESCALATION
+
+if(status == "Not Contacted")
+{
+	hoursDiff = zoho.currenttime.hour() - createdTime.toTime().hour();
+
+	if(hoursDiff > 4)
+	{
+		escalationTask = Map();
+		escalationTask.put("Subject","URGENT: Lead SLA Breach");
+		escalationTask.put("Due_Date",zoho.currentdate);
+		escalationTask.put("Priority","Highest");
+		escalationTask.put("What_Id",leadId);
+
+		zoho.crm.createRecord("Tasks",escalationTask);
+	}
+}
+
+// AUDIT LOG
+
+auditMap = Map();
+auditMap.put("Lead_Id",leadId);
+auditMap.put("Lead_Source",leadSource);
+auditMap.put("Lead_Score",leadScore);
+auditMap.put("Spam_Score",spamScore);
+auditMap.put("Lead_Quality",leadQuality);
+auditMap.put("Assigned_Group",assignmentGroup);
+
+zoho.crm.createRecord("Lead_Audit_Logs",auditMap);
+
+info "Lead Distribution Orchestrator Executed";
